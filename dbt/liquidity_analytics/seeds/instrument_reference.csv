@@ -1,0 +1,11 @@
+instrument_id,instrument_name,asset_class,currency,exchange
+AAPL,Apple Inc.,EQUITY,USD,NASDAQ
+MSFT,Microsoft Corp.,EQUITY,USD,NASDAQ
+GOOGL,Alphabet Inc.,EQUITY,USD,NASDAQ
+AMZN,Amazon.com Inc.,EQUITY,USD,NASDAQ
+US10Y,US 10-Year Treasury,FIXED_INCOME,USD,OTC
+US2Y,US 2-Year Treasury,FIXED_INCOME,USD,OTC
+EURUSD,Euro/US Dollar,FX,USD,OTC
+GBPUSD,British Pound/US Dollar,FX,USD,OTC
+SPX,S&P 500 Index,INDEX,USD,CBOE
+VIX,VIX Volatility Index,INDEX,USD,CBOE

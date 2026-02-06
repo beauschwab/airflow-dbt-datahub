@@ -1,0 +1,31 @@
+# profiles.yml — dbt-spark connection profiles
+# ================================================
+# In production, Cosmos reads this from the Airflow connection via
+# SparkThriftProfileMapping. This file is used for local development
+# and CI/CD testing.
+#
+# Secrets should be injected via environment variables.
+
+liquidity_analytics:
+  target: dev
+
+  outputs:
+    dev:
+      type: spark
+      method: thrift
+      host: "{{ env_var('DBT_SPARK_HOST', 'localhost') }}"
+      port: 10000
+      schema: staging
+      user: "{{ env_var('DBT_SPARK_USER', 'spark') }}"
+      connect_retries: 3
+      connect_timeout: 60
+
+    prod:
+      type: spark
+      method: thrift
+      host: "{{ env_var('DBT_SPARK_HOST') }}"
+      port: 10000
+      schema: staging
+      user: "{{ env_var('DBT_SPARK_USER', 'spark') }}"
+      connect_retries: 5
+      connect_timeout: 120

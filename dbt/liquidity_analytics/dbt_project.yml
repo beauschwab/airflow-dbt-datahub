@@ -1,0 +1,65 @@
+# dbt_project.yml — Liquidity Analytics
+# ======================================
+# dbt-spark adapter with Iceberg file format for all materializations.
+# Used by Cosmos DbtTaskGroup in the Airflow DAG.
+
+name: liquidity_analytics
+version: "1.0.0"
+config-version: 2
+
+profile: liquidity_analytics
+
+model-paths: ["models"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# ── Global model config ─────────────────────────────────────────────
+# All models default to Iceberg format with merge incremental strategy.
+# Partition date is injected via Cosmos operator_args vars.
+
+models:
+  liquidity_analytics:
+
+    +file_format: iceberg
+    +incremental_strategy: merge
+    +on_schema_change: sync_all_columns
+
+    staging:
+      +tags: ["staging"]
+      +schema: staging
+      +materialized: incremental
+      +partition_by:
+        - partition_date
+
+    marts:
+      +tags: ["marts"]
+      +schema: marts
+      +materialized: incremental
+      +partition_by:
+        - partition_date
+
+seeds:
+  +file_format: iceberg
+
+snapshots:
+  +file_format: iceberg
+  +strategy: timestamp
+
+# ── Test / Data Quality config ──────────────────────────────────────
+# Tests tagged `data_quality` run in a dedicated Cosmos DbtTaskGroup.
+# dbt-expectations package provides advanced DQ macros.
+
+tests:
+  +store_failures: true          # Persist failed rows for debugging
+  +severity: warn                # Default to warn; override per-test
+  +tags: ["data_quality"]
+
+# ── Variables ───────────────────────────────────────────────────────
+# Injected at runtime by Cosmos operator_args["vars"]
+vars:
+  partition_date: "1970-01-01"   # Overridden per-run
+  iceberg_catalog: "nessie"      # Overridden per-run

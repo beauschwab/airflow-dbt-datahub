@@ -1,0 +1,25 @@
+version: 2
+
+seeds:
+  - name: instrument_reference
+    description: >
+      Reference data for financial instruments.
+      Used to enrich staging models with instrument metadata
+      (asset class, currency, exchange).
+    columns:
+      - name: instrument_id
+        description: "Unique identifier for the instrument"
+        tests:
+          - unique
+          - not_null
+      - name: instrument_name
+        description: "Human-readable instrument name"
+      - name: asset_class
+        description: "Asset class classification"
+        tests:
+          - accepted_values:
+              values: ["EQUITY", "FIXED_INCOME", "FX", "INDEX", "COMMODITY"]
+      - name: currency
+        description: "Currency code (ISO 4217)"
+      - name: exchange
+        description: "Trading venue"

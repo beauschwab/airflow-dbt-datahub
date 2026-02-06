@@ -1,0 +1,212 @@
+version: 2
+
+models:
+  - name: mart_positions
+    description: >
+      Unified position book combining loans and deposits from separate
+      source systems.  Each source system lands as a separate partition
+      (source_system = 'LOANS' | 'DEPOSITS') alongside the standard
+      partition_date, enabling efficient pruning by product type.
+    tags: ["marts"]
+    columns:
+      - name: position_id
+        description: "Surrogate key: hash of (portfolio_id, instrument_id, position_type, source_system, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: instrument_id
+        description: "Unique identifier for the financial instrument"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: position_qty
+        description: "Number of units held (negative for short positions)"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: notional_value
+        description: "Notional (principal) value of the position"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: position_type
+        description: "Type of position (LONG, SHORT, HEDGE)"
+        tests:
+          - accepted_values:
+              values: ["LONG", "SHORT", "HEDGE"]
+              tags: ["data_quality"]
+
+      - name: currency
+        description: "Currency code (ISO 4217)"
+
+      - name: maturity_date
+        description: "Contractual maturity date (NULL for demand deposits)"
+
+      - name: interest_rate
+        description: "Annualized interest rate"
+
+      - name: source_system
+        description: "Origin system partition: LOANS or DEPOSITS"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+          - accepted_values:
+              values: ["LOANS", "DEPOSITS"]
+              tags: ["data_quality"]
+
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: _loaded_at
+        description: "Timestamp from the staging model"
+
+      - name: _unified_at
+        description: "Timestamp when the union was computed"
+
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1
+          tags: ["data_quality"]
+
+  - name: mart_liquidity_risk
+    description: >
+      Daily liquidity risk metrics per portfolio × instrument.
+      Joins staged positions with market data to compute liquidity tiers,
+      estimated liquidation timelines, and mark-to-market valuations.
+    tags: ["marts"]
+    columns:
+      - name: risk_record_id
+        description: "Surrogate key: hash of (portfolio_id, instrument_id, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: instrument_id
+        description: "Unique identifier for the financial instrument"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: liquidity_tier
+        description: "Liquidity classification based on volume and spread"
+        tests:
+          - accepted_values:
+              values: ["HIGH", "MEDIUM", "LOW"]
+              tags: ["data_quality"]
+
+      - name: est_days_to_liquidate
+        description: "Estimated days to liquidate position at 10% ADV"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              tags: ["data_quality"]
+
+      - name: market_value
+        description: "Mark-to-market value (position_qty × close_price)"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: _computed_at
+        description: "Timestamp when the metrics were computed"
+
+    # ── Table-level tests ──────────────────────────────────────────
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1
+          tags: ["data_quality"]
+      - dbt_utils.recency:
+          datepart: day
+          field: partition_date
+          interval: 2
+          tags: ["data_quality"]
+
+  - name: mart_cashflow_forecast
+    description: >
+      30-day rolling cashflow forecast per portfolio.
+      Projects expected cash inflows and outflows based on position maturities,
+      coupon schedules, and estimated liquidation proceeds.
+    tags: ["marts"]
+    columns:
+      - name: forecast_id
+        description: "Surrogate key: hash of (portfolio_id, forecast_date, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+          - relationships:
+              to: ref('mart_positions')
+              field: portfolio_id
+              tags: ["data_quality"]
+
+      - name: forecast_date
+        description: "Future date for the cashflow projection"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: projected_inflow
+        description: "Expected cash inflows (coupons, maturities)"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: projected_outflow
+        description: "Expected cash outflows (margin calls, settlements)"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: net_cashflow
+        description: "Net projected cashflow (inflow - outflow)"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: cumulative_cashflow
+        description: "Running cumulative cashflow over the forecast horizon"
+
+      - name: partition_date
+        description: "Partition key — business date of the forecast run"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: _computed_at
+        description: "Timestamp when the forecast was computed"

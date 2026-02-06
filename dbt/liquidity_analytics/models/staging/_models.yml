@@ -1,0 +1,154 @@
+version: 2
+
+models:
+  - name: stg_market_data
+    description: >
+      Deduplicated, type-cast market data partitioned by date.
+      Reads from the raw Iceberg staging table populated by Spark ingestion,
+      deduplicates on (instrument_id, as_of_date), and applies consistent typing.
+    tags: ["staging"]
+    columns:
+      - name: market_data_id
+        description: "Surrogate key: hash of (instrument_id, as_of_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: instrument_id
+        description: "Unique identifier for the financial instrument"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: as_of_date
+        description: "Business date for the market data observation"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: close_price
+        description: "End-of-day closing price"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1000000
+              tags: ["data_quality"]
+
+      - name: bid_price
+        description: "Best bid price at close"
+
+      - name: ask_price
+        description: "Best ask price at close"
+
+      - name: volume
+        description: "Total traded volume for the day"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              tags: ["data_quality"]
+
+      - name: yield_rate
+        description: "Yield rate (for fixed income instruments)"
+
+      - name: spread_bps
+        description: "Bid-ask spread in basis points"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 10000
+              tags: ["data_quality"]
+
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: _loaded_at
+        description: "Timestamp when the record was processed by dbt"
+
+  - name: stg_positions_loans
+    description: >
+      Deduplicated, type-cast loan positions from the Loans Management System (LMS).
+      Deduplicates on (portfolio_id, instrument_id, position_type, partition_date)
+      and applies consistent typing. Includes maturity and interest rate fields
+      specific to lending products.
+    tags: ["staging"]
+    columns: &stg_positions_columns
+      - name: position_id
+        description: "Surrogate key: hash of (portfolio_id, instrument_id, position_type, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: instrument_id
+        description: "Unique identifier for the financial instrument"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: position_qty
+        description: "Number of units held (negative for short positions)"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: notional_value
+        description: "Notional (principal) value of the position"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: -10000000000
+              max_value: 10000000000
+              tags: ["data_quality"]
+
+      - name: position_type
+        description: "Type of position"
+        tests:
+          - accepted_values:
+              values: ["LONG", "SHORT", "HEDGE"]
+              tags: ["data_quality"]
+
+      - name: currency
+        description: "Currency code (ISO 4217)"
+
+      - name: maturity_date
+        description: "Contractual maturity date of the instrument"
+
+      - name: interest_rate
+        description: "Annualized interest rate"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: -0.1
+              max_value: 1.0
+              tags: ["data_quality"]
+
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+
+      - name: _loaded_at
+        description: "Timestamp when the record was processed by dbt"
+
+  - name: stg_positions_deposits
+    description: >
+      Deduplicated, type-cast deposit positions from the Core Banking System (CBS).
+      Contains term deposits, demand deposits, and savings accounts.
+      Deduplicates on (portfolio_id, instrument_id, position_type, partition_date).
+    tags: ["staging"]
+    columns: *stg_positions_columns

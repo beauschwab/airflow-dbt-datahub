@@ -1,0 +1,112 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Raw data ingested by Spark into Iceberg staging tables.
+      These tables are populated by SparkKubernetesOperator tasks
+      in the Airflow DAG before dbt staging models run.
+    schema: staging
+    freshness:
+      warn_after:
+        count: 24
+        period: hour
+      error_after:
+        count: 48
+        period: hour
+    loaded_at_field: _ingestion_ts
+
+    tables:
+      - name: market_data
+        description: "Raw market data from upstream feeds (prices, volumes, spreads)"
+        columns:
+          - name: instrument_id
+            description: "Unique identifier for the financial instrument"
+            tests:
+              - not_null:
+                  tags: ["data_quality"]
+          - name: as_of_date
+            description: "Business date for the market data observation"
+            tests:
+              - not_null:
+                  tags: ["data_quality"]
+          - name: close_price
+            description: "End-of-day closing price"
+          - name: bid_price
+            description: "Best bid price at close"
+          - name: ask_price
+            description: "Best ask price at close"
+          - name: volume
+            description: "Total traded volume for the day"
+          - name: yield_rate
+            description: "Yield rate (for fixed income instruments)"
+          - name: spread_bps
+            description: "Bid-ask spread in basis points"
+          - name: partition_date
+            description: "Partition key — business date"
+          - name: _ingestion_ts
+            description: "Timestamp when the record was ingested by Spark"
+
+      - name: positions_loans
+        description: >
+          Raw loan positions ingested from the Loans Management System (LMS).
+          Contains lending exposures, credit facilities, and loan drawdowns.
+        columns:
+          - name: portfolio_id
+            description: "Unique identifier for the portfolio"
+            tests:
+              - not_null:
+                  tags: ["data_quality"]
+          - name: instrument_id
+            description: "Unique identifier for the loan instrument"
+            tests:
+              - not_null:
+                  tags: ["data_quality"]
+          - name: position_qty
+            description: "Number of units / lots held"
+          - name: notional_value
+            description: "Notional (principal) value of the loan"
+          - name: position_type
+            description: "Type of position (LONG, SHORT, HEDGE)"
+          - name: currency
+            description: "Currency code (ISO 4217)"
+          - name: maturity_date
+            description: "Contractual maturity date of the loan"
+          - name: interest_rate
+            description: "Annualized interest rate on the loan"
+          - name: partition_date
+            description: "Partition key — business date"
+          - name: _ingestion_ts
+            description: "Timestamp when the record was ingested by Spark"
+
+      - name: positions_deposits
+        description: >
+          Raw deposit positions ingested from the Core Banking System (CBS).
+          Contains term deposits, demand deposits, and savings accounts.
+        columns:
+          - name: portfolio_id
+            description: "Unique identifier for the portfolio"
+            tests:
+              - not_null:
+                  tags: ["data_quality"]
+          - name: instrument_id
+            description: "Unique identifier for the deposit instrument"
+            tests:
+              - not_null:
+                  tags: ["data_quality"]
+          - name: position_qty
+            description: "Number of units (typically 1 per deposit)"
+          - name: notional_value
+            description: "Notional (principal) value of the deposit"
+          - name: position_type
+            description: "Type of position (LONG — deposits are liabilities)"
+          - name: currency
+            description: "Currency code (ISO 4217)"
+          - name: maturity_date
+            description: "Maturity date (NULL for demand deposits)"
+          - name: interest_rate
+            description: "Annualized interest rate on the deposit"
+          - name: partition_date
+            description: "Partition key — business date"
+          - name: _ingestion_ts
+            description: "Timestamp when the record was ingested by Spark"

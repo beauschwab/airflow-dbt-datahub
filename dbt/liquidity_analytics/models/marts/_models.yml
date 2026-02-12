@@ -90,6 +90,18 @@ models:
       mean/stddev thresholds (e.g., last 60 business days) for time-series
       tracking and alerting in DataHub.
     tags: ["marts", "data_quality"]
+    tests:
+      # dbt-expectations variant of the existing singular test
+      # (assert_mart_positions_agg_outliers_within_threshold.sql).
+      #
+      # This is intentionally evaluated only for the Airflow-injected partition
+      # to ensure the check runs on each incremental partition materialization.
+      - dbt_expectations.expression_is_true:
+          arguments:
+            expression: "not is_outlier"
+            row_condition: "partition_date = cast('{{ var(\"partition_date\") }}' as date)"
+          config:
+            tags: ["data_quality"]
     columns:
       - name: dq_record_id
         description: "Surrogate key: hash of (rule_name, dims_json, partition_date)"

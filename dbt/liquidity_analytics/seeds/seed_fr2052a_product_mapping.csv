@@ -1,0 +1,23 @@
+product_category,product_code,schedule,sub_schedule,maturity_bucket,run_off_rate_pct,description
+RETAIL_STABLE,I.A.1,I,A,OPEN,3,Stable retail deposits - transactional
+RETAIL_STABLE,I.A.2,I,A,LT_30D,3,Stable retail deposits - non-transactional <30D
+RETAIL_LESS_STABLE,I.A.3,I,A,LT_30D,10,Less stable retail deposits <30D
+RETAIL_LESS_STABLE,I.A.4,I,A,GTE_30D,10,Less stable retail deposits >=30D
+WHOLESALE_OPERATIONAL,O.O.1,O,O,OPEN,25,Operational deposits - financial
+WHOLESALE_OPERATIONAL,O.O.2,O,O,LT_30D,25,Operational deposits - non-financial <30D
+WHOLESALE_NON_OP_UNSECURED,O.U.1,O,U,LT_30D,40,Unsecured wholesale non-operational <30D
+WHOLESALE_NON_OP_UNSECURED,O.U.2,O,U,GTE_30D,20,Unsecured wholesale non-operational >=30D
+SECURED_FUNDING_LEVEL_1,O.S.1,O,S,LT_30D,0,Secured by Level 1 HQLA <30D
+SECURED_FUNDING_LEVEL_2A,O.S.2,O,S,LT_30D,15,Secured by Level 2A HQLA <30D
+SECURED_FUNDING_LEVEL_2B,O.S.3,O,S,LT_30D,25,Secured by Level 2B HQLA <30D
+SECURED_FUNDING_OTHER,O.S.4,O,S,LT_30D,100,Secured by non-HQLA <30D
+CREDIT_FACILITY_RETAIL,O.C.1,O,C,UNDRAWN,5,Undrawn retail credit facilities
+CREDIT_FACILITY_CORP,O.C.2,O,C,UNDRAWN,10,Undrawn corporate credit facilities
+CREDIT_FACILITY_FIN,O.C.3,O,C,UNDRAWN,100,Undrawn financial institution credit
+LIQUIDITY_FACILITY,O.L.1,O,L,UNDRAWN,100,Undrawn liquidity facilities
+INFLOW_RETAIL_LOAN,I.R.1,I,R,LT_30D,50,Retail loan contractual inflows <30D
+INFLOW_WHOLESALE,I.W.1,I,W,LT_30D,100,Wholesale contractual inflows <30D
+INFLOW_SECURED,I.S.1,I,S,LT_30D,0,Secured lending maturing (Level 1) <30D
+INFLOW_SECURED,I.S.2,I,S,LT_30D,15,Secured lending maturing (Level 2A) <30D
+DERIVATIVES_COLLATERAL,S.D.1,S,D,ANY,100,Derivative collateral outflows
+DERIVATIVES_VALUATION,S.D.2,S,D,ANY,0,Derivative valuation changes

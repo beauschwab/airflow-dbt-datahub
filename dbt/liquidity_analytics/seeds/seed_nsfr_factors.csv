@@ -1,0 +1,23 @@
+instrument_type,maturity_bucket,asf_factor_pct,rsf_factor_pct,description
+RETAIL_DEPOSIT_STABLE,ANY,95,0,Stable retail deposits (insured)
+RETAIL_DEPOSIT_LESS_STABLE,ANY,90,0,Less stable retail deposits
+WHOLESALE_DEPOSIT_OPERATIONAL,LT_6M,50,0,Operational wholesale deposits (<6M)
+WHOLESALE_DEPOSIT_OPERATIONAL,GTE_6M_LT_1Y,50,0,Operational wholesale deposits (6M-1Y)
+WHOLESALE_DEPOSIT_OPERATIONAL,GTE_1Y,100,0,Operational wholesale deposits (>1Y)
+WHOLESALE_DEPOSIT_NON_OP,LT_6M,0,0,Non-operational wholesale deposits (<6M)
+WHOLESALE_DEPOSIT_NON_OP,GTE_6M_LT_1Y,50,0,Non-operational wholesale deposits (6M-1Y)
+WHOLESALE_DEPOSIT_NON_OP,GTE_1Y,100,0,Non-operational wholesale deposits (>1Y)
+REGULATORY_CAPITAL,ANY,100,0,Tier 1 and Tier 2 capital
+LONG_TERM_DEBT,GTE_1Y,100,0,Long-term debt (>1Y residual maturity)
+LOAN_RETAIL,LT_1Y,0,50,Retail loans (<1Y)
+LOAN_RETAIL,GTE_1Y,0,65,Retail loans (>1Y)
+LOAN_CORPORATE,LT_1Y,0,50,Corporate loans (<1Y)
+LOAN_CORPORATE,GTE_1Y,0,65,Corporate loans (>1Y)
+LOAN_RESIDENTIAL_MORTGAGE,GTE_1Y,0,65,Residential mortgages (>1Y)
+HQLA_LEVEL_1,ANY,0,0,HQLA Level 1 assets
+HQLA_LEVEL_2A,ANY,0,15,HQLA Level 2A assets
+HQLA_LEVEL_2B,ANY,0,50,HQLA Level 2B assets
+OTHER_ASSET,LT_1Y,0,50,Other assets (<1Y)
+OTHER_ASSET,GTE_1Y,0,100,Other assets (>1Y)
+UNENCUMBERED_EQUITY,ANY,0,50,Unencumbered listed equity
+OFF_BALANCE_SHEET,ANY,0,5,Irrevocable credit/liquidity facilities

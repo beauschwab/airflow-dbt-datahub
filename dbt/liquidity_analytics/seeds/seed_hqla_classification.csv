@@ -1,0 +1,13 @@
+instrument_type,hqla_level,haircut_pct,description
+CASH,1,0.00,Cash and central bank reserves
+TREASURY_BOND,1,0.00,Government bonds (0% risk weight)
+AGENCY_BOND,2A,15.00,GSE and agency securities
+CORPORATE_BOND_AA,2A,15.00,Investment grade corporate bonds (AA- or higher)
+CORPORATE_BOND_A,2B,50.00,Investment grade corporate bonds (A+ to BBB-)
+COVERED_BOND,2A,15.00,Covered bonds (AA- or higher)
+EQUITY_INDEX,2B,50.00,Exchange-traded common equity (major index)
+RMBS,2B,25.00,Residential mortgage-backed securities (AA or higher)
+OTHER,NON_HQLA,100.00,Non-HQLA assets
+LOAN,NON_HQLA,100.00,Loans and advances
+TERM_DEPOSIT,NON_HQLA,100.00,Term deposits with other banks
+DEMAND_DEPOSIT,NON_HQLA,100.00,Demand deposits (liability side)

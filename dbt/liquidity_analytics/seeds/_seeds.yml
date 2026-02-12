@@ -23,3 +23,76 @@ seeds:
         description: "Currency code (ISO 4217)"
       - name: exchange
         description: "Trading venue"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Regulatory Classification Seeds
+  # ═══════════════════════════════════════════════════════════════════
+
+  - name: seed_hqla_classification
+    description: >
+      Basel III High-Quality Liquid Asset (HQLA) classification.
+      Maps instrument types to HQLA levels (1, 2A, 2B, NON_HQLA)
+      with applicable haircut percentages.
+    columns:
+      - name: instrument_type
+        description: "Instrument type code"
+        tests:
+          - unique
+          - not_null
+      - name: hqla_level
+        description: "HQLA level: 1, 2A, 2B, or NON_HQLA"
+        tests:
+          - accepted_values:
+              values: ["1", "2A", "2B", "NON_HQLA"]
+      - name: haircut_pct
+        description: "Haircut percentage applied to market value"
+      - name: description
+        description: "Human-readable description"
+
+  - name: seed_nsfr_factors
+    description: >
+      Basel III Net Stable Funding Ratio (NSFR) factors.
+      Defines ASF (Available Stable Funding) and RSF (Required Stable Funding)
+      weights by instrument type and maturity bucket.
+    columns:
+      - name: instrument_type
+        description: "Instrument type code"
+        tests:
+          - not_null
+      - name: maturity_bucket
+        description: "Maturity bucket: LT_6M, GTE_6M_LT_1Y, GTE_1Y, ANY"
+      - name: asf_factor_pct
+        description: "ASF factor percentage (for liabilities/capital)"
+      - name: rsf_factor_pct
+        description: "RSF factor percentage (for assets)"
+      - name: description
+        description: "Human-readable description"
+
+  - name: seed_fr2052a_product_mapping
+    description: >
+      FR 2052a Complex Institution Liquidity Monitoring Report product mapping.
+      Maps position types to Federal Reserve regulatory categories
+      with schedule assignments and run-off/inflow rates.
+    columns:
+      - name: product_category
+        description: "Internal product category classification"
+        tests:
+          - not_null
+      - name: product_code
+        description: "FR 2052a regulatory product code"
+        tests:
+          - unique
+          - not_null
+      - name: schedule
+        description: "FR 2052a schedule: I (Inflows), O (Outflows), S (Supplemental)"
+        tests:
+          - accepted_values:
+              values: ["I", "O", "S"]
+      - name: sub_schedule
+        description: "Sub-schedule code within the main schedule"
+      - name: maturity_bucket
+        description: "Maturity bucket for the product"
+      - name: run_off_rate_pct
+        description: "Run-off rate (outflows) or inflow rate percentage"
+      - name: description
+        description: "Human-readable description"

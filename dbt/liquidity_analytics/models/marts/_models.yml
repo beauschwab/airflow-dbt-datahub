@@ -90,6 +90,18 @@ models:
       mean/stddev thresholds (e.g., last 60 business days) for time-series
       tracking and alerting in DataHub.
     tags: ["marts", "data_quality"]
+    tests:
+      # dbt-expectations variant of the existing singular test
+      # (assert_mart_positions_agg_outliers_within_threshold.sql).
+      #
+      # This is intentionally evaluated only for the Airflow-injected partition
+      # to ensure the check runs on each incremental partition materialization.
+      - dbt_expectations.expression_is_true:
+          arguments:
+            expression: "not is_outlier"
+            row_condition: "partition_date = cast('{{ var(\"partition_date\") }}' as date)"
+          config:
+            tags: ["data_quality"]
     columns:
       - name: dq_record_id
         description: "Surrogate key: hash of (rule_name, dims_json, partition_date)"
@@ -240,3 +252,244 @@ models:
 
       - name: _computed_at
         description: "Timestamp when the forecast was computed"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Regulatory Reporting Models
+  # ═══════════════════════════════════════════════════════════════════
+
+  - name: rpt_lcr
+    description: >
+      Liquidity Coverage Ratio (LCR) per Basel III standards.
+      Computes HQLA / Net Cash Outflows (30-day) with Level 1/2A/2B
+      haircuts and 75% inflow cap. Minimum 100% required.
+    tags: ["marts", "regulatory"]
+    columns:
+      - name: lcr_record_id
+        description: "Surrogate key: hash of (portfolio_id, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: hqla_level_1
+        description: "Level 1 HQLA (cash, govt bonds) — no haircut"
+      - name: hqla_level_2a
+        description: "Level 2A HQLA (agency, covered bonds) — 15% haircut"
+      - name: hqla_level_2b
+        description: "Level 2B HQLA (corp bonds, RMBS) — up to 50% haircut"
+      - name: total_hqla
+        description: "Total HQLA after caps (L2 <= 40% of total)"
+      - name: total_outflows_30d
+        description: "Gross stressed cash outflows over 30-day horizon"
+      - name: total_inflows_30d
+        description: "Gross cash inflows over 30-day horizon"
+      - name: capped_inflows_30d
+        description: "Inflows capped at 75% of outflows per Basel III"
+      - name: net_cash_outflows_30d
+        description: "Total outflows minus capped inflows"
+      - name: lcr_pct
+        description: "LCR percentage (HQLA / net outflows × 100)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              tags: ["data_quality"]
+      - name: is_lcr_compliant
+        description: "True if LCR >= 100%"
+      - name: _computed_at
+        description: "Timestamp when the metrics were computed"
+
+  - name: rpt_nsfr
+    description: >
+      Net Stable Funding Ratio (NSFR) per Basel III standards.
+      Computes Available Stable Funding (ASF) / Required Stable Funding (RSF).
+      Minimum 100% required.
+    tags: ["marts", "regulatory"]
+    columns:
+      - name: nsfr_record_id
+        description: "Surrogate key: hash of (portfolio_id, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: asf_retail_deposits
+        description: "ASF from retail deposits (90-95% factor)"
+      - name: asf_wholesale_funding
+        description: "ASF from wholesale funding (0-100% by maturity)"
+      - name: total_asf
+        description: "Total Available Stable Funding"
+      - name: rsf_loans
+        description: "RSF for loan portfolio (50-85% factor)"
+      - name: rsf_hqla
+        description: "RSF for HQLA (0-50% factor)"
+      - name: rsf_other_assets
+        description: "RSF for other assets (50-100% factor)"
+      - name: total_rsf
+        description: "Total Required Stable Funding"
+      - name: nsfr_pct
+        description: "NSFR percentage (ASF / RSF × 100)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              tags: ["data_quality"]
+      - name: is_nsfr_compliant
+        description: "True if NSFR >= 100%"
+      - name: nsfr_surplus_deficit
+        description: "ASF minus RSF (positive = surplus)"
+      - name: _computed_at
+        description: "Timestamp when the metrics were computed"
+
+  - name: rpt_fr2052a_outflows
+    description: >
+      FR 2052a Schedule O: Outflow Amounts.
+      Maps deposit positions to Fed product categories and applies
+      stressed run-off rates by maturity bucket.
+    tags: ["marts", "regulatory", "fr2052a"]
+    columns:
+      - name: outflow_record_id
+        description: "Surrogate key: hash of (portfolio_id, product_code, maturity_bucket, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: schedule
+        description: "FR 2052a schedule identifier (O)"
+      - name: sub_schedule
+        description: "Sub-schedule code (O, U, S, C, L)"
+      - name: product_code
+        description: "FR 2052a product category code"
+      - name: product_description
+        description: "Human-readable product description"
+      - name: maturity_bucket
+        description: "Maturity time bucket (OPEN, LT_30D, etc.)"
+      - name: run_off_rate_pct
+        description: "Stressed run-off rate applied"
+      - name: position_count
+        description: "Number of underlying positions"
+      - name: gross_amount
+        description: "Gross notional before run-off"
+      - name: stressed_outflow_amount
+        description: "Stressed outflow = gross × run-off rate"
+      - name: maturity_bucket_order
+        description: "Numeric ordering for maturity buckets"
+      - name: _computed_at
+        description: "Timestamp when the metrics were computed"
+
+  - name: rpt_fr2052a_inflows
+    description: >
+      FR 2052a Schedule I: Inflow Amounts.
+      Maps loan positions to Fed product categories and calculates
+      expected cash inflows by maturity bucket.
+    tags: ["marts", "regulatory", "fr2052a"]
+    columns:
+      - name: inflow_record_id
+        description: "Surrogate key: hash of (portfolio_id, product_code, maturity_bucket, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: schedule
+        description: "FR 2052a schedule identifier (I)"
+      - name: sub_schedule
+        description: "Sub-schedule code (R, W, S)"
+      - name: product_code
+        description: "FR 2052a product category code"
+      - name: product_description
+        description: "Human-readable product description"
+      - name: maturity_bucket
+        description: "Maturity time bucket (OPEN, LT_30D, etc.)"
+      - name: inflow_rate_pct
+        description: "Expected inflow rate applied"
+      - name: position_count
+        description: "Number of underlying positions"
+      - name: gross_amount
+        description: "Gross notional amount"
+      - name: expected_inflow_amount
+        description: "Expected inflow = gross × inflow rate"
+      - name: maturity_bucket_order
+        description: "Numeric ordering for maturity buckets"
+      - name: _computed_at
+        description: "Timestamp when the metrics were computed"
+
+  - name: rpt_fr2052a_supplemental
+    description: >
+      FR 2052a Schedule S: Supplemental Items.
+      Captures derivatives collateral, encumbered assets,
+      and off-balance sheet exposures.
+    tags: ["marts", "regulatory", "fr2052a"]
+    columns:
+      - name: supplemental_record_id
+        description: "Surrogate key: hash of (portfolio_id, item_code, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+      - name: portfolio_id
+        description: "Unique identifier for the portfolio"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: partition_date
+        description: "Partition key — business date"
+        tests:
+          - not_null:
+              tags: ["data_quality"]
+      - name: schedule
+        description: "FR 2052a schedule identifier (S)"
+      - name: item_code
+        description: "Supplemental item code (S.H.1, S.L.1, etc.)"
+      - name: item_type
+        description: "Item type classification"
+      - name: item_description
+        description: "Human-readable item description"
+      - name: reported_amount
+        description: "Gross reported amount"
+      - name: haircut_amount
+        description: "Amount haircut or unavailable"
+      - name: net_amount
+        description: "Net available amount after haircuts"
+      - name: _computed_at
+        description: "Timestamp when the metrics were computed"

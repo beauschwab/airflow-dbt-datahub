@@ -417,7 +417,12 @@ with DAG(
         context["ti"].xcom_push(key="dq_summary", value=dq_summary)
 
         try:
+            import hashlib
+
+            from airflow.hooks.base import BaseHook
+            from airflow.models import Variable
             from datahub.emitter.rest_emitter import DatahubRestEmitter
+            from datahub.emitter.mcp import MetadataChangeProposalWrapper
             from datahub.metadata.schema_classes import (
                 AssertionResultClass,
                 AssertionResultTypeClass,
@@ -425,26 +430,42 @@ with DAG(
                 AssertionRunStatusClass,
             )
 
+            partition_date = context["data_interval_end"].to_date_string()
+            airflow_run_id = (
+                getattr(context.get("dag_run"), "run_id", None)
+                or context.get("run_id")
+                or "unknown"
+            )
+
+            def _dataset_urn(*, catalog: str, schema: str, table: str) -> str:
+                return (
+                    f"urn:li:dataset:(urn:li:dataPlatform:iceberg,"
+                    f"{catalog}.{schema}.{table},PROD)"
+                )
+
+            def _assertion_urn(assertion_id: str) -> str:
+                return f"urn:li:assertion:{assertion_id}"
+
             emitter = DatahubRestEmitter(
-                gms_server=context["var"]["value"].get(
-                    "datahub_gms_url", "http://datahub-gms:8080"
+                gms_server=Variable.get(
+                    "datahub_gms_url", default_var="http://datahub-gms:8080"
                 ),
             )
 
             for test_detail in dq_summary["test_details"]:
-                assertion_urn = (
-                    f"urn:li:assertion:"
-                    f"dbt_{test_detail['test_id'].replace('.', '_')}"
+                assertion_id = f"dbt_{test_detail['test_id'].replace('.', '_')}"
+                assertion_urn = _assertion_urn(assertion_id)
+                assertee_urn = _dataset_urn(
+                    catalog=ICEBERG_CATALOG, schema="marts", table="mart_positions"
                 )
+
                 run_event = AssertionRunEventClass(
                     timestampMillis=int(
                         context["data_interval_end"].timestamp() * 1000
                     ),
+                    runId=f"{airflow_run_id}::{assertion_id}",
                     assertionUrn=assertion_urn,
-                    asserteeUrn=(
-                        f"urn:li:dataset:(urn:li:dataPlatform:iceberg,"
-                        f"{ICEBERG_CATALOG}.marts.liquidity_risk,PROD)"
-                    ),
+                    asserteeUrn=assertee_urn,
                     status=AssertionRunStatusClass.COMPLETE,
                     result=AssertionResultClass(
                         type=(
@@ -453,11 +474,139 @@ with DAG(
                             else AssertionResultTypeClass.FAILURE
                         ),
                         nativeResults={
-                            "message": test_detail.get("message", "")
+                            "message": test_detail.get("message", ""),
+                            "partition_date": partition_date,
                         },
                     ),
                 )
-                emitter.emit_mce(run_event)
+                emitter.emit(
+                    MetadataChangeProposalWrapper(
+                        entityUrn=assertion_urn,
+                        aspect=run_event,
+                    )
+                )
+
+            # -----------------------------------------------------------------
+            # Enriched metric emission: mart_positions aggregation thresholds
+            # -----------------------------------------------------------------
+            try:
+                from pyhive import hive
+
+                spark_conn = BaseHook.get_connection("spark_thrift")
+                hive_conn = hive.Connection(
+                    host=spark_conn.host,
+                    port=spark_conn.port or 10000,
+                    username=spark_conn.login or "airflow",
+                    database=spark_conn.schema or "default",
+                )
+                cursor = hive_conn.cursor()
+
+                metrics_table = (
+                    f"{ICEBERG_CATALOG}.marts.mart_positions_dq_metrics"
+                )
+                cursor.execute(
+                    "\n".join(
+                        [
+                            "select",
+                            "  rule_name,",
+                            "  dims_json,",
+                            "  partition_date,",
+                            "  current_value,",
+                            "  hist_n,",
+                            "  hist_mean,",
+                            "  hist_stddev,",
+                            "  lower_threshold,",
+                            "  upper_threshold,",
+                            "  zscore,",
+                            "  stddev_multiplier,",
+                            "  lookback_business_days,",
+                            "  min_history_days,",
+                            "  metric_expr,",
+                            "  filter_sql,",
+                            "  group_by_cols,",
+                            "  is_outlier",
+                            f"from {metrics_table}",
+                            f"where partition_date = cast('{partition_date}' as date)",
+                        ]
+                    )
+                )
+
+                metric_cols = [d[0] for d in cursor.description]
+                metric_rows = [dict(zip(metric_cols, r)) for r in cursor.fetchall()]
+                context["ti"].log.info(
+                    "Fetched %d mart_positions DQ metric rows for %s",
+                    len(metric_rows),
+                    partition_date,
+                )
+
+                assertee_urn = _dataset_urn(
+                    catalog=ICEBERG_CATALOG, schema="marts", table="mart_positions"
+                )
+
+                for r in metric_rows:
+                    dims_json = r.get("dims_json") or "{}"
+                    dims_hash = hashlib.sha1(dims_json.encode("utf-8")).hexdigest()[:12]
+                    rule_name = r.get("rule_name") or "unknown_rule"
+
+                    assertion_id = (
+                        f"dq_{rule_name.replace(' ', '_')}__{dims_hash}"
+                    )
+                    assertion_urn = _assertion_urn(assertion_id)
+
+                    result_type = (
+                        AssertionResultTypeClass.FAILURE
+                        if r.get("is_outlier")
+                        else AssertionResultTypeClass.SUCCESS
+                    )
+
+                    run_event = AssertionRunEventClass(
+                        timestampMillis=int(
+                            context["data_interval_end"].timestamp() * 1000
+                        ),
+                        runId=(
+                            f"{airflow_run_id}::dq::{rule_name}::{dims_hash}"
+                        ),
+                        assertionUrn=assertion_urn,
+                        asserteeUrn=assertee_urn,
+                        status=AssertionRunStatusClass.COMPLETE,
+                        result=AssertionResultClass(
+                            type=result_type,
+                            nativeResults={
+                                # identifiers
+                                "partition_date": partition_date,
+                                "rule_name": str(rule_name),
+                                "dims_json": str(dims_json),
+                                "group_by_cols": str(r.get("group_by_cols") or ""),
+                                "filter_sql": str(r.get("filter_sql") or ""),
+                                "metric_expr": str(r.get("metric_expr") or ""),
+                                # values (stringified for JSON safety)
+                                "current_value": str(r.get("current_value")),
+                                "lower_threshold": str(r.get("lower_threshold")),
+                                "upper_threshold": str(r.get("upper_threshold")),
+                                "hist_mean": str(r.get("hist_mean")),
+                                "hist_stddev": str(r.get("hist_stddev")),
+                                "hist_n": str(r.get("hist_n")),
+                                "zscore": str(r.get("zscore")),
+                                "stddev_multiplier": str(r.get("stddev_multiplier")),
+                                "lookback_business_days": str(
+                                    r.get("lookback_business_days")
+                                ),
+                                "min_history_days": str(r.get("min_history_days")),
+                                "is_outlier": str(bool(r.get("is_outlier"))),
+                            },
+                        ),
+                    )
+                    emitter.emit(
+                        MetadataChangeProposalWrapper(
+                            entityUrn=assertion_urn,
+                            aspect=run_event,
+                        )
+                    )
+
+            except Exception as e:
+                context["ti"].log.warning(
+                    "Failed to fetch/emit mart_positions DQ metrics: %s", e
+                )
 
             emitter.flush()
             context["ti"].log.info("DQ assertions emitted to DataHub.")

@@ -1,0 +1,17 @@
+/* Small project-specific polish on top of Material defaults */
+
+/* Slightly larger code blocks for readability */
+.md-typeset pre > code {
+  font-size: 0.82rem;
+}
+
+/* Keep tables readable */
+.md-typeset table:not([class]) {
+  font-size: 0.85rem;
+}
+
+/* Make admonitions stand out a bit more */
+.md-typeset .admonition,
+.md-typeset details {
+  border-width: 0.05rem;
+}

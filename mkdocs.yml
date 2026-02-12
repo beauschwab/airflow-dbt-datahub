@@ -1,0 +1,110 @@
+site_name: airflow-dbt-datahub
+site_description: Partitioned dbt + Spark + Iceberg pipeline orchestrated by Airflow with DataHub lineage and data quality.
+site_url: https://beauschwab.github.io/airflow-dbt-datahub/
+repo_url: https://github.com/beauschwab/airflow-dbt-datahub
+repo_name: beauschwab/airflow-dbt-datahub
+edit_uri: edit/main/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+plugins:
+  - search:
+      lang: en
+  - git-revision-date-localized:
+      enabled: !ENV [CI, false]
+      type: timeago
+      timezone: UTC
+      fallback_to_build_date: true
+      enable_creation_date: true
+      enable_git_follow: false
+  - minify:
+      minify_html: true
+
+validation:
+  nav:
+    # Allow non-content files (like snippets/includes) to live under docs/
+    omitted_files: ignore
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: beauschwab
+      repo: airflow-dbt-datahub
+  - pymdownx.snippets:
+      auto_append:
+        - includes/abbreviations.md
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js
+  - javascripts/mermaid-init.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Data Quality:
+      - Overview: data-quality/overview.md
+      - Rule authoring: data-quality/rules.md
+      - DataHub emission: data-quality/datahub.md
+  - Development:
+      - Local development: development/local.md
+  - Reference:
+      - Airflow DAG: reference/airflow.md
+      - dbt project: reference/dbt.md

@@ -156,6 +156,24 @@ Three complementary lineage channels — all automatic:
 
 The `publish_dq_to_datahub` task provides **supplemental** rich assertion metadata (categories, row-count metrics, freshness SLA) via the DataHub Python SDK on top of what OpenLineage captures automatically.
 
+## Data Quality: Aggregation Threshold Checks (mart_positions)
+
+In addition to standard dbt tests, this repo includes **parameterized, rule-driven aggregation checks** for `mart_positions` that:
+
+- compute aggregations for the current `partition_date` across different dimensional groupings and filter sets
+- compute baselines over a **trailing 60 business days** window (configurable per rule)
+- compare current value to **$\mu \pm k\sigma$** thresholds (configurable per rule)
+- persist **both** observed value and thresholds to an incremental Iceberg table for time-series tracking
+- emit these results to **DataHub** as assertion run events for alerting and trending
+
+Key implementation files:
+
+- Rules: [dbt/liquidity_analytics/macros/mart_positions_dq_rules.sql](dbt/liquidity_analytics/macros/mart_positions_dq_rules.sql)
+- Compiler macro: [dbt/liquidity_analytics/macros/dq_agg_stddev_thresholds.sql](dbt/liquidity_analytics/macros/dq_agg_stddev_thresholds.sql)
+- Metrics model: [dbt/liquidity_analytics/models/marts/mart_positions_dq_metrics.sql](dbt/liquidity_analytics/models/marts/mart_positions_dq_metrics.sql)
+- Outlier test: [dbt/liquidity_analytics/tests/singular/assert_mart_positions_agg_outliers_within_threshold.sql](dbt/liquidity_analytics/tests/singular/assert_mart_positions_agg_outliers_within_threshold.sql)
+- DataHub emission: [dags/partitioned_dbt_spark_iceberg_dag.py](dags/partitioned_dbt_spark_iceberg_dag.py)
+
 ## Quick Start
 
 ```bash
@@ -176,6 +194,17 @@ cd dbt/liquidity_analytics && dbt deps --profiles-dir ../
 ```
 
 Local stack uses `LocalExecutor` (no K8s/Spark). dbt commands run against whatever Spark Thrift host is in `.env` (`DBT_SPARK_HOST`).
+
+## Documentation (MkDocs)
+
+This repo includes a complete MkDocs site under [docs](docs) with Material theme.
+
+Serve locally:
+
+```bash
+pip install -r requirements-docs.txt
+python -m mkdocs serve
+```
 
 ## Package Versions
 

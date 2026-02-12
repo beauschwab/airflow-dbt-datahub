@@ -83,6 +83,36 @@ models:
           min_value: 1
           tags: ["data_quality"]
 
+  - name: mart_positions_dq_metrics
+    description: >
+      Aggregation-based data quality metrics for mart_positions.
+      Stores current partition aggregations alongside trailing-window
+      mean/stddev thresholds (e.g., last 60 business days) for time-series
+      tracking and alerting in DataHub.
+    tags: ["marts", "data_quality"]
+    columns:
+      - name: dq_record_id
+        description: "Surrogate key: hash of (rule_name, dims_json, partition_date)"
+        tests:
+          - unique:
+              tags: ["data_quality"]
+          - not_null:
+              tags: ["data_quality"]
+      - name: rule_name
+        description: "DQ rule identifier"
+      - name: dims_json
+        description: "JSON-encoded dimensional grouping values (named_struct)"
+      - name: partition_date
+        description: "Partition key — business date being evaluated"
+      - name: current_value
+        description: "Observed aggregation for partition_date"
+      - name: lower_threshold
+        description: "Lower bound = mean - k·stddev"
+      - name: upper_threshold
+        description: "Upper bound = mean + k·stddev"
+      - name: is_outlier
+        description: "True when current_value breaches the threshold bounds"
+
   - name: mart_liquidity_risk
     description: >
       Daily liquidity risk metrics per portfolio × instrument.

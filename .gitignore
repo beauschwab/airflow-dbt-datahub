@@ -6,7 +6,11 @@ __pycache__/
 # dbt
 dbt/liquidity_analytics/target/
 dbt/liquidity_analytics/dbt_packages/
+dbt/liquidity_analytics/dbt_internal_packages/
 dbt/liquidity_analytics/logs/
+
+# MkDocs
+site/
 
 # Environment
 .env

@@ -7,6 +7,22 @@ models:
       Reads from the raw Iceberg staging table populated by Spark ingestion,
       deduplicates on (instrument_id, as_of_date), and applies consistent typing.
     tags: ["staging"]
+    # ── Elementary anomaly detection ──────────────────────────────────
+    # volume_anomalies: flags days where the number of instruments priced
+    #   deviates significantly from historical norms (e.g., missing feeds).
+    # freshness_anomalies: alerts when partition_date hasn't advanced on
+    #   schedule (complements the source-level freshness SLA in _sources.yml).
+    tests:
+      - elementary.volume_anomalies:
+          timestamp_column: partition_date
+          tags: ["data_quality", "anomaly_detection"]
+          config:
+            severity: warn
+      - elementary.freshness_anomalies:
+          freshness_column: partition_date
+          tags: ["data_quality", "anomaly_detection"]
+          config:
+            severity: warn
     columns:
       - name: market_data_id
         description: "Surrogate key: hash of (instrument_id, as_of_date)"
@@ -37,6 +53,16 @@ models:
               min_value: 0
               max_value: 1000000
               tags: ["data_quality"]
+          # Detect anomalous price movements (e.g., fat-finger errors, feed glitches)
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - average
+                - min_value
+                - max_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: bid_price
         description: "Best bid price at close"
@@ -50,6 +76,15 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               tags: ["data_quality"]
+          # Detect anomalous volume spikes or drops that may indicate stale/erroneous feeds
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - average
+                - null_count
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: yield_rate
         description: "Yield rate (for fixed income instruments)"
@@ -61,6 +96,15 @@ models:
               min_value: 0
               max_value: 10000
               tags: ["data_quality"]
+          # Detect anomalous spread widening (may signal market stress or data quality issues)
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - average
+                - max_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: partition_date
         description: "Partition key — business date"

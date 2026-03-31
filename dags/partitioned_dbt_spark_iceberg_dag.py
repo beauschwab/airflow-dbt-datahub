@@ -704,7 +704,7 @@ with DAG(
                 request,
                 timeout=request_timeout_seconds,
             ) as response:
-                charset = response.headers.get_content_charset() or "utf-8"
+                charset = response.info().get_content_charset() or "utf-8"
                 body = response.read().decode(charset)
             return _json.loads(body) if body else {}
 

@@ -654,6 +654,8 @@ with DAG(
             env_name: str,
             default: str | None = None,
         ) -> str | None:
+            # Empty strings are treated as "unset" so Variables can explicitly
+            # fall back to environment-based local/dev configuration.
             value = Variable.get(variable_name, default_var=None)
             if value in (None, ""):
                 value = _os.getenv(env_name, default)
@@ -707,6 +709,8 @@ with DAG(
             return _json.loads(body) if body else {}
 
         def _get_operation_state(operation: dict[str, object]) -> str:
+            # Qualytics examples and API payloads reference both "status" and
+            # "state", so we accept either field name here.
             return str(operation.get("status") or operation.get("state") or "").lower()
 
         api_base_url = _get_config("qualytics_api_url", "QUALYTICS_API_URL")
@@ -747,8 +751,8 @@ with DAG(
             "QUALYTICS_INCREMENTAL_SCAN",
             "true",
         )
-        # Qualytics responses have been documented with both "canceled" and
-        # "cancelled", so we accept either spelling intentionally.
+        # Qualytics responses can vary across API surfaces, so we accept both
+        # "state"/"status" fields plus common terminal spellings here.
         terminal_states = {
             "cancelled",
             "canceled",
@@ -787,7 +791,11 @@ with DAG(
                 datastore_items[0].get("id"),
             )
 
-        datastore_id = datastore_items[0]["id"]
+        datastore_id = datastore_items[0].get("id")
+        if datastore_id is None:
+            raise ValueError(
+                f"Qualytics datastore '{datastore_name}' response did not include an id."
+            )
         operation_payload: dict[str, object] = {
             "type": "scan",
             "datastore_id": datastore_id,
@@ -815,9 +823,13 @@ with DAG(
                 f"/operations/{operation_id}",
             )
             operation_state = _get_operation_state(final_operation)
+            operation_end_time = final_operation.get("end_time")
             # We treat either a terminal state or a populated end_time as
             # completion so the task remains compatible with both API shapes.
-            if final_operation.get("end_time") or operation_state in terminal_states:
+            if (
+                operation_end_time not in (None, "")
+                or operation_state in terminal_states
+            ):
                 break
             _time.sleep(poll_interval_seconds)
         else:
@@ -913,6 +925,8 @@ with DAG(
     (
         [ingest_market_data, ingest_positions_loans, ingest_positions_deposits]
         >> dbt_transform
+        # DataHub enrichment and Qualytics scans both read post-dbt artefacts,
+        # so they can run in parallel before maintenance without coupling.
         >> [publish_dq, qualytics_scan]
         >> iceberg_maintenance
     )

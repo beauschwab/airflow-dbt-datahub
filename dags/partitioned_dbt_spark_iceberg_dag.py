@@ -636,6 +636,7 @@ with DAG(
           - qualytics_api_token / QUALYTICS_API_TOKEN
           - qualytics_datastore_name / QUALYTICS_DATASTORE_NAME
           - qualytics_container_names / QUALYTICS_CONTAINER_NAMES
+          - qualytics_incremental_scan / QUALYTICS_INCREMENTAL_SCAN
           - qualytics_request_timeout_seconds / QUALYTICS_REQUEST_TIMEOUT_SECONDS
           - qualytics_poll_interval_seconds / QUALYTICS_POLL_INTERVAL_SECONDS
           - qualytics_poll_timeout_seconds / QUALYTICS_POLL_TIMEOUT_SECONDS
@@ -667,6 +668,14 @@ with DAG(
             default: str,
         ) -> int:
             return int(_get_config(variable_name, env_name, default) or default)
+
+        def _get_bool_config(
+            variable_name: str,
+            env_name: str,
+            default: str,
+        ) -> bool:
+            value = str(_get_config(variable_name, env_name, default) or default)
+            return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
         def _request_json(
             method: str,
@@ -733,6 +742,13 @@ with DAG(
             "QUALYTICS_POLL_TIMEOUT_SECONDS",
             "900",
         )
+        incremental_scan = _get_bool_config(
+            "qualytics_incremental_scan",
+            "QUALYTICS_INCREMENTAL_SCAN",
+            "true",
+        )
+        # Qualytics responses have been documented with both "canceled" and
+        # "cancelled", so we accept either spelling intentionally.
         terminal_states = {
             "cancelled",
             "canceled",
@@ -764,12 +780,18 @@ with DAG(
             raise ValueError(
                 f"Qualytics datastore '{datastore_name}' was not found."
             )
+        if len(datastore_items) > 1:
+            context["ti"].log.warning(
+                "Multiple Qualytics datastores matched %s; using id %s.",
+                datastore_name,
+                datastore_items[0].get("id"),
+            )
 
         datastore_id = datastore_items[0]["id"]
         operation_payload: dict[str, object] = {
             "type": "scan",
             "datastore_id": datastore_id,
-            "incremental": True,
+            "incremental": incremental_scan,
         }
         if container_names:
             operation_payload["container_names"] = container_names
@@ -793,6 +815,8 @@ with DAG(
                 f"/operations/{operation_id}",
             )
             operation_state = _get_operation_state(final_operation)
+            # We treat either a terminal state or a populated end_time as
+            # completion so the task remains compatible with both API shapes.
             if final_operation.get("end_time") or operation_state in terminal_states:
                 break
             _time.sleep(poll_interval_seconds)
@@ -808,17 +832,23 @@ with DAG(
                 f"Qualytics scan {operation_id} finished with state '{final_state}'."
             )
 
+        scan_scope = (
+            f"{len(container_names)} containers"
+            if container_names
+            else "full datastore scan"
+        )
         context["ti"].log.info(
-            "Qualytics scan %s completed for datastore %s (%d containers).",
+            "Qualytics scan %s completed for datastore %s (%s).",
             operation_id,
             datastore_name,
-            len(container_names),
+            scan_scope,
         )
         return {
             "status": final_state or "completed",
             "operation_id": str(operation_id),
             "datastore_name": datastore_name,
             "container_names": container_names,
+            "incremental": incremental_scan,
             "partition_date": context["data_interval_end"].to_date_string(),
         }
 

@@ -205,6 +205,7 @@ Configure it with Airflow Variables or environment variables:
 - `qualytics_api_token` / `QUALYTICS_API_TOKEN`
 - `qualytics_datastore_name` / `QUALYTICS_DATASTORE_NAME`
 - `qualytics_container_names` / `QUALYTICS_CONTAINER_NAMES`
+- `qualytics_incremental_scan` / `QUALYTICS_INCREMENTAL_SCAN`
 - `qualytics_request_timeout_seconds` / `QUALYTICS_REQUEST_TIMEOUT_SECONDS`
 - `qualytics_poll_interval_seconds` / `QUALYTICS_POLL_INTERVAL_SECONDS`
 - `qualytics_poll_timeout_seconds` / `QUALYTICS_POLL_TIMEOUT_SECONDS`

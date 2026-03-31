@@ -24,3 +24,6 @@ The pipeline is orchestrated by:
 - `qualytics_api_token`: Qualytics bearer token
 - `qualytics_datastore_name`: Qualytics datastore to scan
 - `qualytics_container_names`: comma-separated container names; leave empty to scan the whole datastore
+- `qualytics_request_timeout_seconds`: timeout for each Qualytics API request
+- `qualytics_poll_interval_seconds`: polling interval while waiting for scan completion
+- `qualytics_poll_timeout_seconds`: overall timeout while waiting for the scan to finish

@@ -205,6 +205,9 @@ Configure it with Airflow Variables or environment variables:
 - `qualytics_api_token` / `QUALYTICS_API_TOKEN`
 - `qualytics_datastore_name` / `QUALYTICS_DATASTORE_NAME`
 - `qualytics_container_names` / `QUALYTICS_CONTAINER_NAMES`
+- `qualytics_request_timeout_seconds` / `QUALYTICS_REQUEST_TIMEOUT_SECONDS`
+- `qualytics_poll_interval_seconds` / `QUALYTICS_POLL_INTERVAL_SECONDS`
+- `qualytics_poll_timeout_seconds` / `QUALYTICS_POLL_TIMEOUT_SECONDS`
 
 If those values are not configured, the task logs a skip and the rest of the DAG continues unchanged.
 

@@ -636,6 +636,7 @@ with DAG(
           - qualytics_api_token / QUALYTICS_API_TOKEN
           - qualytics_datastore_name / QUALYTICS_DATASTORE_NAME
           - qualytics_container_names / QUALYTICS_CONTAINER_NAMES
+          - qualytics_request_timeout_seconds / QUALYTICS_REQUEST_TIMEOUT_SECONDS
           - qualytics_poll_interval_seconds / QUALYTICS_POLL_INTERVAL_SECONDS
           - qualytics_poll_timeout_seconds / QUALYTICS_POLL_TIMEOUT_SECONDS
         """
@@ -681,10 +682,16 @@ with DAG(
                 method=method,
                 headers=headers,
             )
-            with _request.urlopen(request, timeout=30) as response:
+            with _request.urlopen(
+                request,
+                timeout=request_timeout_seconds,
+            ) as response:
                 charset = response.headers.get_content_charset() or "utf-8"
                 body = response.read().decode(charset)
             return _json.loads(body) if body else {}
+
+        def _get_operation_state(operation: dict[str, object]) -> str:
+            return str(operation.get("status") or operation.get("state") or "").lower()
 
         api_base_url = _get_config("qualytics_api_url", "QUALYTICS_API_URL")
         api_token = _get_config("qualytics_api_token", "QUALYTICS_API_TOKEN")
@@ -711,6 +718,14 @@ with DAG(
                 "10",
             )
             or "10"
+        )
+        request_timeout_seconds = int(
+            _get_config(
+                "qualytics_request_timeout_seconds",
+                "QUALYTICS_REQUEST_TIMEOUT_SECONDS",
+                "30",
+            )
+            or "30"
         )
         poll_timeout_seconds = int(
             _get_config(
@@ -770,9 +785,7 @@ with DAG(
                 "GET",
                 f"/operations/{operation_id}",
             )
-            operation_state = str(
-                final_operation.get("status") or final_operation.get("state") or ""
-            ).lower()
+            operation_state = _get_operation_state(final_operation)
             if final_operation.get("end_time") or operation_state in {
                 "cancelled",
                 "canceled",
@@ -789,9 +802,7 @@ with DAG(
                 f"{operation_id} to finish after {poll_timeout_seconds} seconds."
             )
 
-        final_state = str(
-            final_operation.get("status") or final_operation.get("state") or ""
-        ).lower()
+        final_state = _get_operation_state(final_operation)
         if final_state in {"cancelled", "canceled", "error", "failed"}:
             raise RuntimeError(
                 f"Qualytics scan {operation_id} finished with state '{final_state}'."

@@ -661,6 +661,13 @@ with DAG(
         def _api_url(path: str) -> str:
             return f"{api_base_url.rstrip('/')}/{path.lstrip('/')}"
 
+        def _get_int_config(
+            variable_name: str,
+            env_name: str,
+            default: str,
+        ) -> int:
+            return int(_get_config(variable_name, env_name, default) or default)
+
         def _request_json(
             method: str,
             path: str,
@@ -711,30 +718,30 @@ with DAG(
             )
             return {"status": "skipped"}
 
-        poll_interval_seconds = int(
-            _get_config(
-                "qualytics_poll_interval_seconds",
-                "QUALYTICS_POLL_INTERVAL_SECONDS",
-                "10",
-            )
-            or "10"
+        poll_interval_seconds = _get_int_config(
+            "qualytics_poll_interval_seconds",
+            "QUALYTICS_POLL_INTERVAL_SECONDS",
+            "10",
         )
-        request_timeout_seconds = int(
-            _get_config(
-                "qualytics_request_timeout_seconds",
-                "QUALYTICS_REQUEST_TIMEOUT_SECONDS",
-                "30",
-            )
-            or "30"
+        request_timeout_seconds = _get_int_config(
+            "qualytics_request_timeout_seconds",
+            "QUALYTICS_REQUEST_TIMEOUT_SECONDS",
+            "30",
         )
-        poll_timeout_seconds = int(
-            _get_config(
-                "qualytics_poll_timeout_seconds",
-                "QUALYTICS_POLL_TIMEOUT_SECONDS",
-                "900",
-            )
-            or "900"
+        poll_timeout_seconds = _get_int_config(
+            "qualytics_poll_timeout_seconds",
+            "QUALYTICS_POLL_TIMEOUT_SECONDS",
+            "900",
         )
+        terminal_states = {
+            "cancelled",
+            "canceled",
+            "complete",
+            "completed",
+            "error",
+            "failed",
+        }
+        error_states = {"cancelled", "canceled", "error", "failed"}
 
         container_names = [
             container_name.strip()
@@ -786,14 +793,7 @@ with DAG(
                 f"/operations/{operation_id}",
             )
             operation_state = _get_operation_state(final_operation)
-            if final_operation.get("end_time") or operation_state in {
-                "cancelled",
-                "canceled",
-                "complete",
-                "completed",
-                "error",
-                "failed",
-            }:
+            if final_operation.get("end_time") or operation_state in terminal_states:
                 break
             _time.sleep(poll_interval_seconds)
         else:
@@ -803,7 +803,7 @@ with DAG(
             )
 
         final_state = _get_operation_state(final_operation)
-        if final_state in {"cancelled", "canceled", "error", "failed"}:
+        if final_state in error_states:
             raise RuntimeError(
                 f"Qualytics scan {operation_id} finished with state '{final_state}'."
             )

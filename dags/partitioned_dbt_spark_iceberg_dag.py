@@ -711,7 +711,9 @@ with DAG(
         def _get_operation_state(operation: dict[str, object]) -> str:
             # Qualytics examples and API payloads reference both "status" and
             # "state", so we accept either field name here.
-            return str(operation.get("status") or operation.get("state") or "").lower()
+            return str(
+                operation.get("status") or operation.get("state") or "unknown"
+            ).lower()
 
         api_base_url = _get_config("qualytics_api_url", "QUALYTICS_API_URL")
         api_token = _get_config("qualytics_api_token", "QUALYTICS_API_TOKEN")
@@ -792,7 +794,7 @@ with DAG(
             )
 
         datastore_id = datastore_items[0].get("id")
-        if datastore_id is None:
+        if not datastore_id:
             raise ValueError(
                 f"Qualytics datastore '{datastore_name}' response did not include an id."
             )
@@ -824,6 +826,11 @@ with DAG(
             )
             operation_state = _get_operation_state(final_operation)
             operation_end_time = final_operation.get("end_time")
+            if operation_state == "unknown" and operation_end_time in (None, ""):
+                raise ValueError(
+                    "Qualytics operation response did not include status/state "
+                    "or end_time."
+                )
             # We treat either a terminal state or a populated end_time as
             # completion so the task remains compatible with both API shapes.
             if (

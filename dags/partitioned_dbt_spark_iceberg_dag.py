@@ -106,6 +106,10 @@ dq_report_asset = Asset(
     name="dq_report",
     uri="x-datahub://data-quality/liquidity-pipeline",
 )
+qualytics_scan_asset = Asset(
+    name="qualytics_scan",
+    uri="x-qualytics://data-quality/liquidity-pipeline",
+)
 
 # =========================================================================
 # Shared configs
@@ -350,7 +354,7 @@ with DAG(
     )
 
     # =====================================================================
-    # STEP 3 — Publish DQ results to DataHub (supplemental enrichment)
+    # STEP 3 — Publish DQ results + trigger Qualytics scan
     # =====================================================================
     @task(
         task_id="publish_dq_to_datahub",
@@ -619,6 +623,256 @@ with DAG(
 
     publish_dq = publish_dq_to_datahub()
 
+    @task(
+        task_id="trigger_qualytics_scan",
+        outlets=[qualytics_scan_asset],
+    )
+    def trigger_qualytics_scan(**context):
+        """
+        Trigger a Qualytics scan for the configured Spark/Iceberg datastore.
+
+        Configuration is read from Airflow Variables first, then environment:
+          - qualytics_api_url / QUALYTICS_API_URL
+          - qualytics_api_token / QUALYTICS_API_TOKEN
+          - qualytics_datastore_name / QUALYTICS_DATASTORE_NAME
+          - qualytics_container_names / QUALYTICS_CONTAINER_NAMES
+          - qualytics_incremental_scan / QUALYTICS_INCREMENTAL_SCAN
+          - qualytics_request_timeout_seconds / QUALYTICS_REQUEST_TIMEOUT_SECONDS
+          - qualytics_poll_interval_seconds / QUALYTICS_POLL_INTERVAL_SECONDS
+          - qualytics_poll_timeout_seconds / QUALYTICS_POLL_TIMEOUT_SECONDS
+        """
+        import json as _json
+        import os as _os
+        import time as _time
+        from urllib import parse as _parse
+        from urllib import request as _request
+
+        from airflow.models import Variable
+
+        def _get_config(
+            variable_name: str,
+            env_name: str,
+            default: str | None = None,
+        ) -> str | None:
+            # Empty strings are treated as "unset" so Variables can explicitly
+            # fall back to environment-based local/dev configuration.
+            value = Variable.get(variable_name, default_var=None)
+            if value in (None, ""):
+                value = _os.getenv(env_name, default)
+            return value
+
+        def _api_url(path: str) -> str:
+            return f"{api_base_url.rstrip('/')}/{path.lstrip('/')}"
+
+        def _get_int_config(
+            variable_name: str,
+            env_name: str,
+            default: str,
+        ) -> int:
+            return int(_get_config(variable_name, env_name, default) or default)
+
+        def _get_bool_config(
+            variable_name: str,
+            env_name: str,
+            default: str,
+        ) -> bool:
+            value = str(_get_config(variable_name, env_name, default) or default)
+            return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+        def _request_json(
+            method: str,
+            path: str,
+            *,
+            params: dict[str, object] | None = None,
+            payload: dict[str, object] | None = None,
+        ) -> dict:
+            url = _api_url(path)
+            if params:
+                url = f"{url}?{_parse.urlencode(params, doseq=True)}"
+
+            request_body = None
+            if payload is not None:
+                request_body = _json.dumps(payload).encode("utf-8")
+
+            request = _request.Request(
+                url=url,
+                data=request_body,
+                method=method,
+                headers=headers,
+            )
+            with _request.urlopen(
+                request,
+                timeout=request_timeout_seconds,
+            ) as response:
+                charset = response.info().get_content_charset() or "utf-8"
+                body = response.read().decode(charset)
+            return _json.loads(body) if body else {}
+
+        def _get_operation_state(operation: dict[str, object]) -> str:
+            # Qualytics examples and API payloads reference both "status" and
+            # "state", so we accept either field name here.
+            return str(
+                operation.get("status") or operation.get("state") or "unknown"
+            ).lower()
+
+        api_base_url = _get_config("qualytics_api_url", "QUALYTICS_API_URL")
+        api_token = _get_config("qualytics_api_token", "QUALYTICS_API_TOKEN")
+        datastore_name = _get_config(
+            "qualytics_datastore_name",
+            "QUALYTICS_DATASTORE_NAME",
+        )
+        containers_raw = _get_config(
+            "qualytics_container_names",
+            "QUALYTICS_CONTAINER_NAMES",
+            "",
+        ) or ""
+
+        if not api_base_url or not api_token or not datastore_name:
+            context["ti"].log.info(
+                "Qualytics configuration not set; skipping Qualytics scan."
+            )
+            return {"status": "skipped"}
+
+        poll_interval_seconds = _get_int_config(
+            "qualytics_poll_interval_seconds",
+            "QUALYTICS_POLL_INTERVAL_SECONDS",
+            "10",
+        )
+        request_timeout_seconds = _get_int_config(
+            "qualytics_request_timeout_seconds",
+            "QUALYTICS_REQUEST_TIMEOUT_SECONDS",
+            "30",
+        )
+        poll_timeout_seconds = _get_int_config(
+            "qualytics_poll_timeout_seconds",
+            "QUALYTICS_POLL_TIMEOUT_SECONDS",
+            "900",
+        )
+        incremental_scan = _get_bool_config(
+            "qualytics_incremental_scan",
+            "QUALYTICS_INCREMENTAL_SCAN",
+            "true",
+        )
+        # Qualytics responses can vary across API surfaces, so we accept both
+        # "state"/"status" fields plus common terminal spellings here.
+        terminal_states = {
+            "cancelled",
+            "canceled",
+            "complete",
+            "completed",
+            "error",
+            "failed",
+        }
+        error_states = {"cancelled", "canceled", "error", "failed"}
+
+        container_names = [
+            container_name.strip()
+            for container_name in containers_raw.split(",")
+            if container_name.strip()
+        ]
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
+
+        datastores_response = _request_json(
+            "GET",
+            "/datastores",
+            params={"name": datastore_name},
+        )
+        datastore_items = datastores_response.get("items") or []
+        if not datastore_items:
+            raise ValueError(
+                f"Qualytics datastore '{datastore_name}' was not found."
+            )
+        if len(datastore_items) > 1:
+            context["ti"].log.warning(
+                "Multiple Qualytics datastores matched %s; using id %s.",
+                datastore_name,
+                datastore_items[0].get("id"),
+            )
+
+        datastore_id = datastore_items[0].get("id")
+        if not datastore_id:
+            raise ValueError(
+                f"Qualytics datastore '{datastore_name}' response did not include an id."
+            )
+        operation_payload: dict[str, object] = {
+            "type": "scan",
+            "datastore_id": datastore_id,
+            "incremental": incremental_scan,
+        }
+        if container_names:
+            operation_payload["container_names"] = container_names
+
+        operation = _request_json(
+            "POST",
+            "/operations/run",
+            payload=operation_payload,
+        )
+        operation_id = operation.get("id")
+        if not operation_id:
+            raise ValueError(
+                "Qualytics operations/run response did not include an id."
+            )
+
+        deadline = _time.monotonic() + poll_timeout_seconds
+        final_operation = operation
+        while _time.monotonic() < deadline:
+            final_operation = _request_json(
+                "GET",
+                f"/operations/{operation_id}",
+            )
+            operation_state = _get_operation_state(final_operation)
+            operation_end_time = final_operation.get("end_time")
+            if operation_state == "unknown" and operation_end_time in (None, ""):
+                raise ValueError(
+                    "Qualytics operation response did not include status/state "
+                    "or end_time."
+                )
+            # We treat either a terminal state or a populated end_time as
+            # completion so the task remains compatible with both API shapes.
+            if (
+                operation_end_time not in (None, "")
+                or operation_state in terminal_states
+            ):
+                break
+            _time.sleep(poll_interval_seconds)
+        else:
+            raise TimeoutError(
+                "Timed out waiting for Qualytics scan "
+                f"{operation_id} to finish after {poll_timeout_seconds} seconds."
+            )
+
+        final_state = _get_operation_state(final_operation)
+        if final_state in error_states:
+            raise RuntimeError(
+                f"Qualytics scan {operation_id} finished with state '{final_state}'."
+            )
+
+        scan_scope = (
+            f"{len(container_names)} containers"
+            if container_names
+            else "full datastore scan"
+        )
+        context["ti"].log.info(
+            "Qualytics scan %s completed for datastore %s (%s).",
+            operation_id,
+            datastore_name,
+            scan_scope,
+        )
+        return {
+            "status": final_state or "completed",
+            "operation_id": str(operation_id),
+            "datastore_name": datastore_name,
+            "container_names": container_names,
+            "incremental": incremental_scan,
+            "partition_date": context["data_interval_end"].to_date_string(),
+        }
+
+    qualytics_scan = trigger_qualytics_scan()
+
     # =====================================================================
     # STEP 4 — Iceberg Table Maintenance (OPTIMIZE + VACUUM)
     # =====================================================================
@@ -678,6 +932,8 @@ with DAG(
     (
         [ingest_market_data, ingest_positions_loans, ingest_positions_deposits]
         >> dbt_transform
-        >> publish_dq
+        # DataHub enrichment and Qualytics scans both read post-dbt artefacts,
+        # so they can run in parallel before maintenance without coupling.
+        >> [publish_dq, qualytics_scan]
         >> iceberg_maintenance
     )

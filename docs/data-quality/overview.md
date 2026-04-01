@@ -1,9 +1,11 @@
 # Data Quality (DQ) overview
 
-This project publishes DQ signals to DataHub via two channels:
+This project publishes DQ signals to DataHub via two channels and can optionally trigger a Qualytics scan from Airflow after the dbt task group completes:
 
 1. **dbt tests**: pass/fail/warn captured via OpenLineage facets
 2. **Aggregation-based statistical checks**: computed per partition and emitted with both *observed values* and *thresholds* for time-series tracking
+
+When Qualytics is configured, the DAG task `trigger_qualytics_scan` calls the Qualytics REST API for the configured Spark/Iceberg datastore and container list. If Qualytics settings are absent, that task is skipped.
 
 ## Aggregation threshold checks
 

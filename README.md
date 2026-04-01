@@ -1,6 +1,6 @@
 # Partitioned dbt-Spark-Iceberg Pipeline with DataHub Lineage
 
-End-to-end **liquidity analytics pipeline** demonstrating **Airflow 3.1**, **dbt via Astronomer Cosmos (factory pattern)**, and **DataHub metadata/lineage** via OpenLineage — all running on Spark + Iceberg.
+End-to-end **liquidity analytics pipeline** demonstrating **Airflow 3.1**, **dbt via Astronomer Cosmos (factory pattern)**, **DataHub metadata/lineage** via OpenLineage, and optional **Qualytics** scan orchestration — all running on Spark + Iceberg.
 
 ## Architecture
 
@@ -28,12 +28,12 @@ End-to-end **liquidity analytics pipeline** demonstrating **Airflow 3.1**, **dbt
 │  │  Tests run AFTER_EACH model │ Assets emitted per model              │     │
 │  └─────────────────────────────┬───────────────────────────────────────┘     │
 │                                ▼                                              │
-│  STEP 3 — Publish DQ (@task)                                                 │
-│  ┌──────────────────────────────┐                                            │
-│  │  Parse run_results.json      │                                            │
-│  │  Emit assertions → DataHub   │  (supplemental to OpenLineage auto facets) │
-│  │  outlet: dq_report Asset     │                                            │
-│  └──────────────┬───────────────┘                                            │
+│  STEP 3 — Publish DQ + trigger Qualytics (@task)                             │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐          │
+│  │  Parse run_results.json      │  │  Trigger Qualytics scan      │          │
+│  │  Emit assertions → DataHub   │  │  for configured Spark tables │          │
+│  │  outlet: dq_report Asset     │  │  outlet: qualytics_scan Asset│          │
+│  └──────────────┬───────────────┘  └──────────────┬───────────────┘          │
 │                 ▼                                                             │
 │  STEP 4 — Iceberg Maintenance (SparkKubernetesOperator)                      │
 │  ┌──────────────────────────────┐                                            │
@@ -140,7 +140,7 @@ RenderConfig(
 
 | Layer | Mechanism | Scope |
 |---|---|---|
-| **1. Airflow task graph** | `[ingest_*] >> dbt_transform >> publish_dq >> iceberg_maintenance` | All 3 Spark ingest tasks must complete before any dbt task starts |
+| **1. Airflow task graph** | `[ingest_*] >> dbt_transform >> [publish_dq, qualytics_scan] >> iceberg_maintenance` | All 3 Spark ingest tasks must complete before any dbt task starts |
 | **2. Cosmos `ref()` graph** | `mart_positions.sql` calls `ref('stg_positions_loans')` + `ref('stg_positions_deposits')` | Both staging tasks finish before `mart_positions` — guaranteed by dbt DAG resolution |
 | **3. Airflow Assets** | Each ingest task declares `outlets=[Asset(...)]` | Future-proof: if ingestion splits to a separate DAG, use `schedule=(asset_loans & asset_deposits & asset_market)` |
 
@@ -181,7 +181,7 @@ Key implementation files:
 git clone https://github.com/beauschwab/airflow-dbt-datahub.git
 cd airflow-dbt-datahub
 cp .env.example .env
-# Edit .env with your DataHub token, Spark host, and AWS credentials
+# Edit .env with your DataHub token, optional Qualytics settings, Spark host, and AWS credentials
 
 # 2. Build and start
 docker compose up -d
@@ -194,6 +194,23 @@ cd dbt/liquidity_analytics && dbt deps --profiles-dir ../
 ```
 
 Local stack uses `LocalExecutor` (no K8s/Spark). dbt commands run against whatever Spark Thrift host is in `.env` (`DBT_SPARK_HOST`).
+
+## Optional Qualytics integration
+
+The DAG includes an optional `trigger_qualytics_scan` task that calls the Qualytics REST API after the dbt task group completes. It is designed for Spark/Iceberg-backed datastores, so the Airflow orchestration stays the same while Qualytics scans the configured containers.
+
+Configure it with Airflow Variables or environment variables:
+
+- `qualytics_api_url` / `QUALYTICS_API_URL`
+- `qualytics_api_token` / `QUALYTICS_API_TOKEN`
+- `qualytics_datastore_name` / `QUALYTICS_DATASTORE_NAME`
+- `qualytics_container_names` / `QUALYTICS_CONTAINER_NAMES`
+- `qualytics_incremental_scan` / `QUALYTICS_INCREMENTAL_SCAN`
+- `qualytics_request_timeout_seconds` / `QUALYTICS_REQUEST_TIMEOUT_SECONDS`
+- `qualytics_poll_interval_seconds` / `QUALYTICS_POLL_INTERVAL_SECONDS`
+- `qualytics_poll_timeout_seconds` / `QUALYTICS_POLL_TIMEOUT_SECONDS`
+
+If those values are not configured, the task logs a skip and the rest of the DAG continues unchanged.
 
 ## Documentation (MkDocs)
 

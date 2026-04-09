@@ -42,6 +42,13 @@ models:
       +partition_by:
         - partition_date
 
+  # ── Elementary data observability ───────────────────────────────────
+  # Elementary writes anomaly-detection metadata to its own schema.
+  # Run `dbt run --select elementary` on first deployment to initialize.
+  elementary:
+    +schema: "elementary"
+    +enabled: true
+
 seeds:
   +file_format: iceberg
 
@@ -63,3 +70,10 @@ tests:
 vars:
   partition_date: "1970-01-01"   # Overridden per-run
   iceberg_catalog: "nessie"      # Overridden per-run
+
+  # ── Elementary anomaly detection defaults ─────────────────────────
+  # days_back: how many historical partitions to use for baseline stats.
+  # anomaly_sensitivity: k-sigma multiplier — matches the existing custom
+  #   DQ framework (dq_agg_stddev_thresholds.sql) so thresholds are consistent.
+  days_back: 30
+  anomaly_sensitivity: 3

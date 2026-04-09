@@ -40,6 +40,16 @@ models:
         tests:
           - not_null:
               tags: ["data_quality"]
+          # Detect anomalous aggregate notional shifts (large trades, data errors)
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - sum
+                - average
+                - null_count
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: position_type
         description: "Type of position (LONG, SHORT, HEDGE)"
@@ -78,10 +88,27 @@ models:
       - name: _unified_at
         description: "Timestamp when the union was computed"
 
+    # ── Elementary anomaly detection ──────────────────────────────────
+    # volume_anomalies: detects unexpected drops in position count, which
+    #   could indicate a failed ingest for one or both source systems.
+    # dimension_anomalies: monitors the LOANS vs DEPOSITS split — a shift in
+    #   the ratio may signal a missing feed from one source system.
     tests:
       - dbt_expectations.expect_table_row_count_to_be_between:
           min_value: 1
           tags: ["data_quality"]
+      - elementary.volume_anomalies:
+          timestamp_column: partition_date
+          tags: ["data_quality", "anomaly_detection"]
+          config:
+            severity: warn
+      - elementary.dimension_anomalies:
+          timestamp_column: partition_date
+          dimensions:
+            - source_system
+          tags: ["data_quality", "anomaly_detection"]
+          config:
+            severity: warn
 
   - name: mart_positions_dq_metrics
     description: >
@@ -165,12 +192,32 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               tags: ["data_quality"]
+          # Detect anomalous jumps in liquidation timeline (market liquidity stress signals)
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - average
+                - max_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: market_value
         description: "Mark-to-market value (position_qty × close_price)"
         tests:
           - not_null:
               tags: ["data_quality"]
+          # Detect anomalous portfolio valuation changes (large market moves, feed errors)
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - sum
+                - average
+                - min_value
+                - max_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: partition_date
         description: "Partition key — business date"
@@ -182,6 +229,10 @@ models:
         description: "Timestamp when the metrics were computed"
 
     # ── Table-level tests ──────────────────────────────────────────
+    # volume_anomalies: flags unexpected drops in risk record count
+    #   (e.g., instruments missing from the positions/market-data join).
+    # dimension_anomalies: monitors the liquidity tier distribution — a sudden
+    #   shift toward LOW tier may signal market stress or a data quality issue.
     tests:
       - dbt_expectations.expect_table_row_count_to_be_between:
           min_value: 1
@@ -191,6 +242,18 @@ models:
           field: partition_date
           interval: 2
           tags: ["data_quality"]
+      - elementary.volume_anomalies:
+          timestamp_column: partition_date
+          tags: ["data_quality", "anomaly_detection"]
+          config:
+            severity: warn
+      - elementary.dimension_anomalies:
+          timestamp_column: partition_date
+          dimensions:
+            - liquidity_tier
+          tags: ["data_quality", "anomaly_detection"]
+          config:
+            severity: warn
 
   - name: mart_cashflow_forecast
     description: >
@@ -240,6 +303,17 @@ models:
         tests:
           - not_null:
               tags: ["data_quality"]
+          # Detect anomalous swings in net cashflow projections across portfolios
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - sum
+                - average
+                - min_value
+                - max_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
 
       - name: cumulative_cashflow
         description: "Running cumulative cashflow over the forecast horizon"
@@ -303,6 +377,16 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               tags: ["data_quality"]
+          # Detect anomalous LCR movements that may indicate a structural liquidity shift
+          # or a data quality issue in the HQLA / outflow inputs.
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - average
+                - min_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
       - name: is_lcr_compliant
         description: "True if LCR >= 100%"
       - name: _computed_at
@@ -352,6 +436,16 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               tags: ["data_quality"]
+          # Detect anomalous NSFR movements that may signal a funding structure change
+          # or a data quality issue in the ASF / RSF inputs.
+          - elementary.column_anomalies:
+              timestamp_column: partition_date
+              column_anomalies:
+                - average
+                - min_value
+              tags: ["data_quality", "anomaly_detection"]
+              config:
+                severity: warn
       - name: is_nsfr_compliant
         description: "True if NSFR >= 100%"
       - name: nsfr_surplus_deficit

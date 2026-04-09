@@ -8,3 +8,6 @@ packages:
 
   - package: calogica/dbt_expectations
     version: ">=0.10.0"
+
+  - package: elementary-data/elementary
+    version: ">=0.15.0"
